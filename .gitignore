@@ -1,0 +1,7 @@
+jarvis_state.json
+outputs/
+uploads/
+knowledge/
+*.pyc
+__pycache__/
+.env

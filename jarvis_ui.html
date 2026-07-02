@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>JARVIS</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --cyan:#00d4ff;--green:#00ff88;--orange:#ff6b35;
+  --dark:#020b12;--panel:rgba(0,212,255,0.04);--border:rgba(0,212,255,0.15);
+}
+body{background:var(--dark);color:#a0e8f0;font-family:'Share Tech Mono',monospace;min-height:100vh;overflow-x:hidden}
+.hud{display:grid;grid-template-columns:220px 1fr 280px;grid-template-rows:60px 1fr 60px;height:100vh;gap:1px;background:rgba(0,212,255,0.08)}
+.topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;background:var(--dark);border-bottom:1px solid var(--border)}
+.logo{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:600;letter-spacing:6px;color:var(--cyan)}
+.logo span{color:var(--green)}
+.topbar-status{display:flex;gap:1.5rem;align-items:center}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.sys-time{font-size:12px;color:rgba(0,212,255,0.5);letter-spacing:2px}
+.panel-left{background:var(--dark);padding:1rem;display:flex;flex-direction:column;gap:1rem;overflow:hidden}
+.panel-center{background:var(--dark);display:flex;flex-direction:column;overflow:hidden}
+.panel-right{background:var(--dark);padding:1rem;display:flex;flex-direction:column;gap:1rem;overflow:hidden}
+.panel-bottom{grid-column:1/-1;background:var(--dark);border-top:1px solid var(--border);display:flex;align-items:center;gap:1rem;padding:0 1.5rem}
+.sec-label{font-size:10px;letter-spacing:3px;color:rgba(0,212,255,0.4);text-transform:uppercase;margin-bottom:6px;border-bottom:1px solid var(--border);padding-bottom:4px}
+#sphere-wrap{display:flex;flex-direction:column;align-items:center;padding:1rem 0 0.5rem}
+#c{display:block}
+#status{font-size:11px;letter-spacing:4px;color:var(--cyan);margin-top:8px;transition:color 0.3s;text-transform:uppercase}
+#response-wrap{flex:1;margin:0.5rem 1rem;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:1rem;overflow-y:auto;font-size:13px;line-height:1.8;color:#c0ecf4}
+#drop-zone{margin:0 1rem 0.3rem;border:1px dashed rgba(0,212,255,0.25);border-radius:4px;padding:0.5rem;text-align:center;cursor:pointer;font-size:11px;letter-spacing:2px;color:rgba(0,212,255,0.35);transition:all 0.2s}
+#drop-zone:hover,#drop-zone.drag-over{border-color:var(--cyan);color:var(--cyan);background:rgba(0,212,255,0.04)}
+#img-zone{margin:0 1rem 0.3rem;border:1px dashed rgba(0,255,136,0.25);border-radius:4px;padding:0.5rem;text-align:center;cursor:pointer;font-size:11px;letter-spacing:2px;color:rgba(0,255,136,0.35);transition:all 0.2s}
+#img-zone:hover{border-color:var(--green);color:var(--green);background:rgba(0,255,136,0.04)}
+#file-input,#img-input{display:none}
+#file-badge{font-size:10px;color:var(--green);text-align:center;letter-spacing:1px;margin:0 1rem 2px}
+#cmd-area{display:flex;gap:8px;padding:0 1rem 0.4rem}
+#cmd-input{flex:1;background:rgba(0,212,255,0.04);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.75rem;color:#a0e8f0;font-size:12px;font-family:'Share Tech Mono',monospace;outline:none}
+#cmd-input::placeholder{color:rgba(0,212,255,0.25)}
+#cmd-btn{background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.3);border-radius:4px;padding:0.5rem 0.75rem;color:var(--cyan);font-size:11px;font-family:'Share Tech Mono',monospace;cursor:pointer;letter-spacing:1px;white-space:nowrap}
+#cmd-btn:hover{background:rgba(0,212,255,0.15)}
+#download-area{display:none;padding:0 1rem 0.4rem}
+#download-btn{width:100%;background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.3);border-radius:4px;padding:0.5rem;color:var(--green);font-size:11px;font-family:'Share Tech Mono',monospace;cursor:pointer;letter-spacing:1px}
+.stat-card{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:0.6rem 0.75rem}
+.stat-card .val{font-size:20px;font-weight:600;color:var(--cyan);font-family:'Rajdhani',sans-serif;line-height:1}
+.stat-card .lbl{font-size:9px;letter-spacing:2px;color:rgba(0,212,255,0.4);margin-top:2px}
+.stat-card.green .val{color:var(--green)}
+.stat-card.orange .val{color:var(--orange)}
+#chart-wrap{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:0.5rem;flex:1;min-height:0;position:relative}
+#table-wrap{background:var(--panel);border:1px solid var(--border);border-radius:4px;overflow:auto;flex:1;min-height:0}
+#data-table{width:100%;border-collapse:collapse;font-size:11px}
+#data-table th{background:rgba(0,212,255,0.1);color:var(--cyan);padding:4px 8px;text-align:left;letter-spacing:1px;font-size:10px;position:sticky;top:0}
+#data-table td{padding:3px 8px;border-bottom:1px solid rgba(0,212,255,0.06);color:#a0e8f0}
+#data-table tr:hover td{background:rgba(0,212,255,0.04)}
+.hint{font-size:10px;letter-spacing:2px;color:rgba(0,212,255,0.3)}
+.scan-line{position:fixed;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);animation:scan 4s linear infinite;opacity:0.3;pointer-events:none}
+@keyframes scan{0%{transform:translateY(0)}100%{transform:translateY(100vh)}}
+</style>
+</head>
+<body>
+<div class="scan-line"></div>
+<div class="hud">
+
+  <div class="topbar">
+    <div class="logo">JAR<span>VIS</span></div>
+    <div class="topbar-status">
+      <div class="dot"></div>
+      <span id="top-status" style="font-size:11px;letter-spacing:3px;color:var(--cyan)">ONLINE</span>
+      <span class="sys-time" id="clock"></span>
+    </div>
+  </div>
+
+  <div class="panel-left">
+    <div>
+      <div class="sec-label">CORE</div>
+      <div id="sphere-wrap">
+        <canvas id="c" width="160" height="160"></canvas>
+        <div id="status">STANDBY</div>
+      </div>
+    </div>
+    <div>
+      <div class="sec-label">METRICS</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div class="stat-card green"><div class="val" id="s-income">—</div><div class="lbl">REVENUE</div></div>
+        <div class="stat-card orange"><div class="val" id="s-expense">—</div><div class="lbl">EXPENSE</div></div>
+        <div class="stat-card"><div class="val" id="s-profit">—</div><div class="lbl">NET PROFIT</div></div>
+        <div class="stat-card"><div class="val" id="s-margin">—</div><div class="lbl">MARGIN</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel-center">
+    <div id="response-wrap">พร้อมรับคำสั่ง — DROP FILE หรือ UPLOAD IMAGE ด้านล่าง</div>
+    <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+      ▲ DROP FILE — PDF / WORD / EXCEL / CSV
+    </div>
+    <div id="img-zone" onclick="document.getElementById('img-input').click()">
+      📷 UPLOAD IMAGE — ใบเสร็จ / รูปภาพ / เอกสาร
+    </div>
+    <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.xls,.csv">
+    <input type="file" id="img-input" accept="image/*">
+    <div id="file-badge"></div>
+    <div id="cmd-area">
+      <input type="text" id="cmd-input" placeholder="สั่ง Jarvis เช่น: ออกงบการเงิน excel / วิเคราะห์ใบเสร็จ">
+      <button id="cmd-btn" onclick="sendCommand()">▶ SEND</button>
+    </div>
+    <div id="download-area">
+      <button id="download-btn" onclick="downloadFile()">⬇ DOWNLOAD OUTPUT</button>
+    </div>
+  </div>
+
+  <div class="panel-right">
+    <div>
+      <div class="sec-label">CHART</div>
+      <div id="chart-wrap"><canvas id="myChart"></canvas></div>
+    </div>
+    <div style="flex:1;min-height:0;display:flex;flex-direction:column">
+      <div class="sec-label">DATA TABLE</div>
+      <div id="table-wrap">
+        <table id="data-table">
+          <thead><tr><th>ITEM</th><th>VALUE</th></tr></thead>
+          <tbody id="table-body">
+            <tr><td colspan="2" style="color:rgba(0,212,255,0.3);padding:8px">NO DATA</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel-bottom">
+    <span class="hint">PRESS Q TO ACTIVATE VOICE</span>
+    <span style="flex:1"></span>
+    <span class="hint" id="bottom-file"></span>
+    <span class="hint">SYS v2.1</span>
+  </div>
+
+</div>
+
+<script>
+setInterval(()=>{
+  const n=new Date();
+  document.getElementById('clock').textContent=n.toLocaleTimeString('th-TH',{hour12:false})+' '+n.toLocaleDateString('th-TH');
+},1000);
+
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let angle=0,speaking=false;
+const pts=[];
+for(let i=0;i<120;i++){
+  const phi=Math.acos(1-2*(i+0.5)/120);
+  const theta=Math.PI*(1+Math.sqrt(5))*i;
+  pts.push({x:Math.sin(phi)*Math.cos(theta),y:Math.sin(phi)*Math.sin(theta),z:Math.cos(phi)});
+}
+function drawSphere(){
+  ctx.clearRect(0,0,160,160);
+  angle+=speaking?0.025:0.008;
+  const R=speaking?72:60;
+  const cos=Math.cos(angle),sin=Math.sin(angle);
+  const proj=pts.map(p=>{
+    const x2=p.x*cos-p.z*sin,z2=p.x*sin+p.z*cos,sc=(z2+2)/3;
+    return{sx:80+x2*R*sc,sy:80+p.y*R*sc,z:z2,sc};
+  }).sort((a,b)=>a.z-b.z);
+  proj.forEach(p=>{
+    ctx.beginPath();ctx.arc(p.sx,p.sy,p.sc*1.6,0,Math.PI*2);
+    ctx.fillStyle=speaking?`rgba(0,255,136,${(p.z+1)/2*0.9})`:`rgba(0,212,255,${(p.z+1)/2*0.85})`;
+    ctx.fill();
+  });
+  for(let i=0;i<proj.length;i++)for(let j=i+1;j<proj.length;j++){
+    const d=Math.hypot(proj[i].sx-proj[j].sx,proj[i].sy-proj[j].sy);
+    if(d<24){
+      ctx.beginPath();ctx.moveTo(proj[i].sx,proj[i].sy);ctx.lineTo(proj[j].sx,proj[j].sy);
+      ctx.strokeStyle=speaking?`rgba(0,255,136,${(1-d/24)*0.35})`:`rgba(0,212,255,${(1-d/24)*0.25})`;
+      ctx.lineWidth=0.4;ctx.stroke();
+    }
+  }
+  requestAnimationFrame(drawSphere);
+}
+drawSphere();
+
+const chartCtx=document.getElementById('myChart').getContext('2d');
+let myChart=new Chart(chartCtx,{
+  type:'bar',
+  data:{
+    labels:['Revenue','Expense','Profit'],
+    datasets:[{data:[0,0,0],backgroundColor:['rgba(0,255,136,0.3)','rgba(255,107,53,0.3)','rgba(0,212,255,0.3)'],borderColor:['#00ff88','#ff6b35','#00d4ff'],borderWidth:1}]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:{color:'rgba(0,212,255,0.5)',font:{size:9}},grid:{color:'rgba(0,212,255,0.08)'}},
+      y:{ticks:{color:'rgba(0,212,255,0.5)',font:{size:9}},grid:{color:'rgba(0,212,255,0.08)'}}
+    }
+  }
+});
+
+function updateChart(income,expense,profit){
+  myChart.data.datasets[0].data=[income,expense,profit];
+  myChart.update();
+}
+
+function updateMetrics(data){
+  const fmt=v=>v>=1000000?(v/1000000).toFixed(1)+'M':v>=1000?(v/1000).toFixed(0)+'K':v.toFixed(0);
+  document.getElementById('s-income').textContent=data.raw_income?fmt(data.raw_income):'—';
+  document.getElementById('s-expense').textContent=data.raw_expense?fmt(data.raw_expense):'—';
+  document.getElementById('s-profit').textContent=data.net_profit!==undefined?fmt(data.net_profit):'—';
+  document.getElementById('s-margin').textContent=data.profit_margin!==undefined?data.profit_margin.toFixed(1)+'%':'—';
+  if(data.raw_income||data.raw_expense||data.net_profit)
+    updateChart(data.raw_income||0,data.raw_expense||0,data.net_profit||0);
+}
+
+function updateTable(data){
+  const rows=[
+    ['รายได้ก่อนหักคืน',data.raw_income],
+    ['สินค้ารับคืน',data.return_in],
+    ['รายได้สุทธิ',data.total_income],
+    ['ค่าใช้จ่าย',data.raw_expense],
+    ['กำไรสุทธิ',data.net_profit],
+    ['อัตรากำไร',data.profit_margin!==undefined?data.profit_margin+'%':undefined],
+    ['สินทรัพย์หมุนเวียน',data.current_assets],
+    ['หนี้สิน',data.current_liabilities||data.total_liabilities],
+    ['ส่วนของผู้ถือหุ้น',data.equity],
+  ].filter(r=>r[1]!==undefined&&r[1]!==null&&r[1]!==0);
+  if(!rows.length)return;
+  const fmt=v=>typeof v==='number'?v.toLocaleString('th-TH',{maximumFractionDigits:0}):v;
+  document.getElementById('table-body').innerHTML=rows.map(r=>`
+    <tr><td>${r[0]}</td><td style="text-align:right;color:var(--cyan)">${fmt(r[1])}</td></tr>
+  `).join('');
+}
+
+let currentFile=null,lastDownloadFile=null;
+
+function setStatus(text,color='var(--cyan)'){
+  document.getElementById('status').textContent=text;
+  document.getElementById('status').style.color=color;
+  document.getElementById('top-status').textContent=text;
+  document.getElementById('top-status').style.color=color;
+}
+
+async function uploadFile(file){
+  currentFile=file;
+  document.getElementById('file-badge').textContent='✓ '+file.name;
+  document.getElementById('bottom-file').textContent=file.name;
+  document.getElementById('response-wrap').textContent='โหลดไฟล์แล้ว: '+file.name+' — พิมคำสั่งแล้วกด SEND';
+  setStatus('FILE READY','var(--green)');
+  setTimeout(()=>setStatus('STANDBY'),2000);
+}
+
+async function sendCommand(){
+  const cmd=document.getElementById('cmd-input').value.trim();
+  const resp=document.getElementById('response-wrap');
+  const dlArea=document.getElementById('download-area');
+  if(!currentFile){resp.textContent='กรุณาอัปโหลดไฟล์ก่อนครับ';return;}
+  speaking=true;
+  setStatus('PROCESSING','#ffaa00');
+  resp.textContent='Jarvis กำลังประมวลผล...';
+  dlArea.style.display='none';
+  const form=new FormData();
+  form.append('file',currentFile);
+  form.append('command',cmd||'สรุปเนื้อหาทั้งหมด');
+  try{
+    const r=await fetch('http://localhost:5001/upload',{method:'POST',body:form});
+    const d=await r.json();
+    if(d.result){
+      resp.textContent=d.result;
+      setStatus('COMPLETE','var(--green)');
+      if(d.docx_file){lastDownloadFile=d.docx_file;dlArea.style.display='block';}
+      try{
+        const meta=d.meta||{};
+        if(Object.keys(meta).length){updateMetrics(meta);updateTable(meta);}
+      }catch(e){}
+      setTimeout(()=>{speaking=false;setStatus('STANDBY');},4000);
+    }else{
+      resp.textContent='Error: '+(d.error||'ไม่ทราบสาเหตุ');
+      speaking=false;setStatus('ERROR','#ff4444');
+    }
+  }catch(e){
+    resp.textContent='เชื่อมต่อ server ไม่ได้';
+    speaking=false;setStatus('ERROR','#ff4444');
+  }
+}
+
+async function analyzeImage(file){
+  const cmd=document.getElementById('cmd-input').value.trim()||'วิเคราะห์รูปภาพนี้';
+  const resp=document.getElementById('response-wrap');
+  speaking=true;
+  setStatus('SCANNING IMAGE','var(--green)');
+  resp.textContent='Jarvis กำลังวิเคราะห์รูปภาพ...';
+  document.getElementById('file-badge').textContent='📷 '+file.name;
+  const form=new FormData();
+  form.append('image',file);
+  form.append('command',cmd);
+  try{
+    const r=await fetch('http://localhost:5001/analyze-image',{method:'POST',body:form});
+    const d=await r.json();
+    if(d.result){
+      resp.textContent=d.result;
+      setStatus('COMPLETE','var(--green)');
+      setTimeout(()=>{speaking=false;setStatus('STANDBY');},4000);
+    }else{
+      resp.textContent='Error: '+(d.error||'ไม่ทราบสาเหตุ');
+      speaking=false;setStatus('ERROR','#ff4444');
+    }
+  }catch(e){
+    resp.textContent='เชื่อมต่อ server ไม่ได้';
+    speaking=false;setStatus('ERROR','#ff4444');
+  }
+}
+
+async function downloadFile(){
+  if(!lastDownloadFile)return;
+  const r=await fetch('http://localhost:5001/download?file='+encodeURIComponent(lastDownloadFile));
+  const blob=await r.blob();
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=lastDownloadFile;a.click();
+}
+
+document.getElementById('cmd-input').addEventListener('keydown',e=>{if(e.key==='Enter')sendCommand();});
+
+const dz=document.getElementById('drop-zone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');const f=e.dataTransfer.files[0];if(f)uploadFile(f);});
+document.getElementById('file-input').addEventListener('change',e=>{if(e.target.files[0])uploadFile(e.target.files[0]);});
+document.getElementById('img-input').addEventListener('change',e=>{if(e.target.files[0])analyzeImage(e.target.files[0]);});
+
+const imgZone=document.getElementById('img-zone');
+imgZone.addEventListener('dragover',e=>{e.preventDefault();imgZone.style.borderColor='var(--green)';});
+imgZone.addEventListener('dragleave',()=>imgZone.style.borderColor='');
+imgZone.addEventListener('drop',e=>{e.preventDefault();imgZone.style.borderColor='';const f=e.dataTransfer.files[0];if(f)analyzeImage(f);});
+
+let lastText='';
+async function poll(){
+  try{
+    const r=await fetch('jarvis_state.json?t='+Date.now());
+    const d=await r.json();
+    if(d.text&&d.text!==lastText&&!d.file){
+      lastText=d.text;
+      document.getElementById('response-wrap').textContent=d.text;
+      speaking=true;setStatus('SPEAKING','var(--green)');
+      setTimeout(()=>{speaking=false;setStatus('STANDBY');},d.text.length*80+2000);
+    }
+  }catch(e){}
+  setTimeout(poll,800);
+}
+poll();
+</script>
+</body>
+</html>
