@@ -1,7 +1,8 @@
 flask
 flask-cors
 anthropic
-pymupdf
-python-docx
+PyMuPDF
 openpyxl
-xlsxwriter
+python-docx
+python-dotenv
+gunicorn

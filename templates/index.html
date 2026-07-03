@@ -259,7 +259,7 @@ async function sendCommand(){
   form.append('file',currentFile);
   form.append('command',cmd||'สรุปเนื้อหาทั้งหมด');
   try{
-    const r=await fetch('http://localhost:5001/upload',{method:'POST',body:form});
+    const r=await fetch('/upload',{method:'POST',body:form});
     const d=await r.json();
     if(d.result){
       resp.textContent=d.result;
@@ -291,7 +291,7 @@ async function analyzeImage(file){
   form.append('image',file);
   form.append('command',cmd);
   try{
-    const r=await fetch('http://localhost:5001/analyze-image',{method:'POST',body:form});
+    const r=await fetch('/analyze-image',{method:'POST',body:form});
     const d=await r.json();
     if(d.result){
       resp.textContent=d.result;
@@ -309,7 +309,7 @@ async function analyzeImage(file){
 
 async function downloadFile(){
   if(!lastDownloadFile)return;
-  const r=await fetch('http://localhost:5001/download?file='+encodeURIComponent(lastDownloadFile));
+  const r=await fetch('/download?file='+encodeURIComponent(lastDownloadFile));
   const blob=await r.blob();
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -333,7 +333,7 @@ imgZone.addEventListener('drop',e=>{e.preventDefault();imgZone.style.borderColor
 let lastText='';
 async function poll(){
   try{
-    const r=await fetch('jarvis_state.json?t='+Date.now());
+    const r=await fetch('/jarvis_state.json?t='+Date.now());
     const d=await r.json();
     if(d.text&&d.text!==lastText&&!d.file){
       lastText=d.text;
