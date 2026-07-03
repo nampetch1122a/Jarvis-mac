@@ -558,11 +558,11 @@ JARVIS_SYSTEM_PROMPT = (
     "คุณคือ Jarvis AI ผู้ช่วยส่วนตัว ถ้าถามเรื่องง่ายตอบสั้น 1-2 ประโยค "
     "ถ้าถามซับซ้อนค่อยอธิบายยาว ห้ามใช้ bullet point ห้ามใช้ * "
     "ตอบเป็นประโยคธรรมชาติเหมือนเพื่อนคุยกัน "
-    "ถ้าถามภาษาไทยตอบไทย ถ้าถามอังกฤษตอบอังกฤษ"
+    "ถ้าถามภาษาไทยตอบไทย ถ้าถามอังกฤษตอบอังกฤษ "
+    "คุณมีเครื่องมือค้นเว็บ (web_search) ใช้ได้เสมอ ให้ใช้มันทุกครั้งที่คำถามเกี่ยวกับ "
+    "ราคา หุ้น ข่าว เหตุการณ์ปัจจุบัน วันที่ปัจจุบัน หรือเรื่องใดๆ ที่ความรู้ในตัวคุณอาจล้าสมัยหรือไม่แน่ใจ "
+    "อย่าตอบว่า \"ข้อมูลมีข้อจำกัดด้านเวลา\" หรือแนะนำให้ไปเช็คเว็บอื่นเอง โดยที่ยังไม่ได้ลองค้นเว็บด้วยตัวเองก่อน"
 )
-
-SEARCH_KEYWORDS = ["ราคา", "หุ้น", "ข่าว", "วันนี้", "ล่าสุด", "ตอนนี้", "2025", "2026",
-                    "price", "news", "today", "latest", "current"]
 
 
 @app.route("/chat", methods=["POST"])
@@ -578,8 +578,6 @@ def chat():
     if knowledge:
         system_prompt += f"\n\nความรู้อ้างอิงที่มีให้ (ใช้ประกอบคำตอบถ้าเกี่ยวข้อง):\n{knowledge}"
 
-    need_search = any(w in message.lower() for w in SEARCH_KEYWORDS)
-
     messages = []
     for turn in history[-10:]:
         role = turn.get("role")
@@ -593,14 +591,16 @@ def chat():
         "max_tokens": 1536,
         "system": system_prompt,
         "messages": messages,
+        "tools": [{"type": "web_search_20250305", "name": "web_search"}],
     }
-    if need_search:
-        params["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
 
     try:
         result = client.messages.create(**params)
         answer = ""
+        searched = False
         for block in result.content:
+            if getattr(block, "type", "") in ("server_tool_use", "web_search_tool_result"):
+                searched = True
             if hasattr(block, "text"):
                 answer += block.text
         answer = clean_for_speech(answer)
@@ -609,7 +609,7 @@ def chat():
         return jsonify({"error": f"เรียก AI ไม่สำเร็จ: {e}"}), 500
 
     write_state(answer, "")
-    return jsonify({"reply": answer, "searched": need_search})
+    return jsonify({"reply": answer, "searched": searched})
 
 
 @app.route("/upload", methods=["POST"])
