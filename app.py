@@ -33,6 +33,23 @@ if not os.path.exists(STATE_FILE):
         json.dump({"status": "idle", "text": ""}, f, ensure_ascii=False)
 
 
+def extract_json(raw):
+    """ดึง JSON object ออกจากคำตอบ AI แม้จะมีข้อความอธิบาย/ขั้นตอนคิดปนมาด้วยก็ตาม"""
+    text = re.sub(r'```json|```', '', raw).strip()
+    start = text.find('{')
+    if start == -1:
+        raise ValueError("ไม่พบ JSON ในคำตอบ")
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == '{':
+            depth += 1
+        elif text[i] == '}':
+            depth -= 1
+            if depth == 0:
+                return json.loads(text[start:i+1])
+    raise ValueError("JSON ไม่สมบูรณ์ (วงเล็บปีกกาไม่ปิด)")
+
+
 def load_knowledge():
     knowledge = ""
     try:
@@ -472,7 +489,7 @@ def upload():
 - ส่วนของผู้ถือหุ้น = ทุนจดทะเบียน + กำไรสะสม
 - total_assets ต้องเท่ากับ total_liabilities_equity
 
-ตอบเป็น JSON เท่านั้น:
+คำนวณและตรวจทานในใจให้เสร็จก่อน แล้วตอบกลับมาเป็น JSON object เพียงอย่างเดียวเท่านั้น ห้ามมีข้อความ คำอธิบาย หรือขั้นตอนการคิดใดๆ ปนอยู่ก่อนหรือหลัง JSON เด็ดขาด (ฟิลด์ "analysis" ต้องเขียนเป็นภาษาไทยเสมอ):
 {{
   "company_name": "<ชื่อบริษัท>",
   "raw_income": <รายได้ก่อนหักคืน>,
@@ -514,15 +531,14 @@ def upload():
             )
             raw = message.content[0].text
             try:
-                clean_json = re.sub(r'```json|```', '', raw).strip()
-                ai_data = json.loads(clean_json)
+                ai_data = extract_json(raw)
                 company = ai_data.get("company_name", "บริษัทตัวอย่าง")
                 analysis = ai_data.get("analysis", "")
                 answer = clean_for_speech(analysis)
                 docx_file = create_excel_report(file.filename, ai_data, analysis, company)
             except Exception as e:
                 print(f"JSON parse error: {e}")
-                answer = clean_for_speech(raw)
+                answer = "ขออภัยครับ Jarvis ประมวลผลข้อมูลไม่สำเร็จ ลองส่งคำสั่งใหม่อีกครั้งครับ"
                 docx_file = None
 
         elif want_balance_sheet:
@@ -579,7 +595,7 @@ def upload():
 ข้อมูลดิบ:
 {content[:4000]}
 
-ตอบ JSON:
+คำนวณและตรวจทานในใจให้เสร็จก่อน แล้วตอบกลับมาเป็น JSON object เพียงอย่างเดียวเท่านั้น ห้ามมีข้อความ คำอธิบาย หรือขั้นตอนการคิดใดๆ ปนอยู่ก่อนหรือหลัง JSON เด็ดขาด (ฟิลด์ "summary" ต้องเขียนเป็นภาษาไทยเสมอ):
 {{"current_assets":0,"current_liabilities":0,"equity":0,"cash_in":0,"cash_out":0,"net_cash":0,"summary":"<วิเคราะห์>"}}"""
 
             message = client.messages.create(
@@ -589,13 +605,13 @@ def upload():
             )
             raw = message.content[0].text
             try:
-                clean_json = re.sub(r'```json|```', '', raw).strip()
-                ai_data = json.loads(clean_json)
+                ai_data = extract_json(raw)
                 ai_data.update(calc)
                 answer = clean_for_speech(ai_data.get("summary", ""))
                 docx_file = create_excel_report(file.filename, ai_data, answer)
-            except Exception:
-                answer = clean_for_speech(raw)
+            except Exception as e:
+                print(f"JSON parse error: {e}")
+                answer = "ขออภัยครับ Jarvis ประมวลผลข้อมูลไม่สำเร็จ ลองส่งคำสั่งใหม่อีกครั้งครับ"
                 docx_file = None
 
         else:
