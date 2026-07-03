@@ -110,7 +110,7 @@ body{background:var(--dark);color:#a0e8f0;font-family:'Share Tech Mono',monospac
     <input type="file" id="img-input" accept="image/*">
     <div id="file-badge"></div>
     <div id="cmd-area">
-      <input type="text" id="cmd-input" placeholder="สั่ง Jarvis เช่น: ออกงบการเงิน excel / วิเคราะห์ใบเสร็จ">
+      <input type="text" id="cmd-input" placeholder="สั่ง Jarvis เช่น: แปลงใบเสร็จเป็น excel / สรุปเป็น word / วิเคราะห์เนื้อหา">
       <button id="cmd-btn" onclick="sendCommand()">▶ SEND</button>
     </div>
     <div id="download-area">
@@ -236,7 +236,7 @@ function updateTable(data){
   `).join('');
 }
 
-let currentFile=null,lastDownloadFile=null;
+let currentFile=null,currentImage=null,lastDownloadFile=null;
 
 function setStatus(text,color='var(--cyan)'){
   document.getElementById('status').textContent=text;
@@ -247,6 +247,7 @@ function setStatus(text,color='var(--cyan)'){
 
 async function uploadFile(file){
   currentFile=file;
+  currentImage=null;
   document.getElementById('file-badge').textContent='✓ '+file.name;
   document.getElementById('bottom-file').textContent=file.name;
   document.getElementById('response-wrap').textContent='โหลดไฟล์แล้ว: '+file.name+' — พิมคำสั่งแล้วกด SEND';
@@ -258,7 +259,13 @@ async function sendCommand(){
   const cmd=document.getElementById('cmd-input').value.trim();
   const resp=document.getElementById('response-wrap');
   const dlArea=document.getElementById('download-area');
-  if(!currentFile){resp.textContent='กรุณาอัปโหลดไฟล์ก่อนครับ';return;}
+
+  if(currentImage){
+    await analyzeImage(cmd);
+    return;
+  }
+
+  if(!currentFile){resp.textContent='กรุณาอัปโหลดไฟล์หรือรูปภาพก่อนครับ';return;}
   speaking=true;
   setStatus('PROCESSING','#ffaa00');
   resp.textContent='Jarvis กำลังประมวลผล...';
@@ -288,22 +295,41 @@ async function sendCommand(){
   }
 }
 
-async function analyzeImage(file){
-  const cmd=document.getElementById('cmd-input').value.trim()||'วิเคราะห์รูปภาพนี้';
+async function attachImage(file){
+  currentImage=file;
+  currentFile=null;
+  document.getElementById('file-badge').textContent='📷 '+file.name;
+  document.getElementById('bottom-file').textContent=file.name;
+  document.getElementById('response-wrap').textContent='แนบรูปแล้ว: '+file.name+' — พิมพ์คำสั่งแล้วกด SEND (เช่น "แปลงเป็น excel" หรือ "สรุปเป็น word")';
+  setStatus('IMAGE READY','var(--green)');
+  setTimeout(()=>setStatus('STANDBY'),2000);
+}
+
+async function analyzeImage(cmd){
   const resp=document.getElementById('response-wrap');
+  const dlArea=document.getElementById('download-area');
   speaking=true;
   setStatus('SCANNING IMAGE','var(--green)');
   resp.textContent='Jarvis กำลังวิเคราะห์รูปภาพ...';
-  document.getElementById('file-badge').textContent='📷 '+file.name;
+  dlArea.style.display='none';
   const form=new FormData();
-  form.append('image',file);
-  form.append('command',cmd);
+  form.append('image',currentImage);
+  form.append('command',cmd||'วิเคราะห์รูปภาพนี้');
   try{
     const r=await fetch('/analyze-image',{method:'POST',body:form});
     const d=await r.json();
     if(d.result){
       resp.textContent=d.result;
       setStatus('COMPLETE','var(--green)');
+      if(d.docx_file){lastDownloadFile=d.docx_file;dlArea.style.display='block';}
+      try{
+        const meta=d.meta||{};
+        if(meta.table&&meta.table.length){updateTable({});
+          document.getElementById('table-body').innerHTML=meta.table.map(row=>`
+            <tr><td>${row[0]}</td><td style="text-align:right;color:var(--cyan)">${row[1]}</td></tr>
+          `).join('');
+        }
+      }catch(e){}
       setTimeout(()=>{speaking=false;setStatus('STANDBY');},4000);
     }else{
       resp.textContent='Error: '+(d.error||'ไม่ทราบสาเหตุ');
@@ -331,12 +357,12 @@ dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-ove
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');const f=e.dataTransfer.files[0];if(f)uploadFile(f);});
 document.getElementById('file-input').addEventListener('change',e=>{if(e.target.files[0])uploadFile(e.target.files[0]);});
-document.getElementById('img-input').addEventListener('change',e=>{if(e.target.files[0])analyzeImage(e.target.files[0]);});
+document.getElementById('img-input').addEventListener('change',e=>{if(e.target.files[0])attachImage(e.target.files[0]);});
 
 const imgZone=document.getElementById('img-zone');
 imgZone.addEventListener('dragover',e=>{e.preventDefault();imgZone.style.borderColor='var(--green)';});
 imgZone.addEventListener('dragleave',()=>imgZone.style.borderColor='');
-imgZone.addEventListener('drop',e=>{e.preventDefault();imgZone.style.borderColor='';const f=e.dataTransfer.files[0];if(f)analyzeImage(f);});
+imgZone.addEventListener('drop',e=>{e.preventDefault();imgZone.style.borderColor='';const f=e.dataTransfer.files[0];if(f)attachImage(f);});
 
 let lastText='';
 async function poll(){

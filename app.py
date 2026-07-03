@@ -410,6 +410,77 @@ def create_balance_sheet_report(filename, full_answer):
     return out_name
 
 
+def create_generic_excel_report(title, table_rows, summary, out_prefix="รายงาน"):
+    """สร้าง Excel จากผลวิเคราะห์รูป/เอกสารทั่วไป (ไม่ผูกกับ schema งบการเงิน)"""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "รายงาน"
+    set_col_width(ws, 1, 45)
+    set_col_width(ws, 2, 25)
+    r = 1
+    ws.merge_cells(f"A{r}:B{r}")
+    write_cell(ws, r, 1, title, bold=True, fill=title_fill(), align="center", font_color="FFFFFF", size=14)
+    r += 1
+    ws.merge_cells(f"A{r}:B{r}")
+    write_cell(ws, r, 1, f"สร้างเมื่อ {datetime.now().strftime('%d/%m/%Y %H:%M')}", fill=subtotal_fill(), align="center")
+    r += 2
+
+    if table_rows:
+        write_cell(ws, r, 1, "รายการ", bold=True, fill=section_fill(), align="center")
+        write_cell(ws, r, 2, "จำนวนเงิน / ค่า", bold=True, fill=section_fill(), align="center")
+        r += 1
+        for label, value in table_rows:
+            write_cell(ws, r, 1, label)
+            write_cell(ws, r, 2, value, align="right")
+            r += 1
+        r += 1
+
+    if summary:
+        write_cell(ws, r, 1, "สรุปผลวิเคราะห์", bold=True, fill=section_fill())
+        ws.merge_cells(f"A{r}:B{r}")
+        r += 1
+        ws.merge_cells(f"A{r}:B{r+3}")
+        cell = ws.cell(row=r, column=1, value=summary)
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+    out_name = f"{out_prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    out_path = os.path.join(OUTPUT_DIR, out_name)
+    wb.save(out_path)
+    return out_name
+
+
+def create_generic_word_report(title, table_rows, summary, out_prefix="รายงาน"):
+    """สร้าง Word จากผลวิเคราะห์รูป/เอกสารทั่วไป"""
+    doc = Document()
+    heading = doc.add_heading(title, 0)
+    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph(f"สร้างเมื่อ: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    doc.add_paragraph("")
+
+    if table_rows:
+        table = doc.add_table(rows=1, cols=2)
+        table.style = "Light Grid Accent 1"
+        hdr = table.rows[0].cells
+        hdr[0].text = "รายการ"
+        hdr[1].text = "จำนวนเงิน / ค่า"
+        for label, value in table_rows:
+            row = table.add_row().cells
+            row[0].text = str(label)
+            row[1].text = str(value)
+        doc.add_paragraph("")
+
+    if summary:
+        doc.add_heading("สรุปผลวิเคราะห์", level=1)
+        for line in summary.split("\n"):
+            if line.strip():
+                doc.add_paragraph(line.strip())
+
+    out_name = f"{out_prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+    out_path = os.path.join(OUTPUT_DIR, out_name)
+    doc.save(out_path)
+    return out_name
+
+
 def write_state(text, filename=""):
     try:
         with open(STATE_FILE, "w") as f:
@@ -645,7 +716,8 @@ def analyze_image():
     if not file:
         return jsonify({"error": "no image"}), 400
 
-    img_data = base64.standard_b64encode(file.read()).decode("utf-8")
+    img_bytes = file.read()
+    img_data = base64.standard_b64encode(img_bytes).decode("utf-8")
     ext = file.filename.lower().split(".")[-1]
     media_type_map = {
         "jpg": "image/jpeg", "jpeg": "image/jpeg",
@@ -653,7 +725,31 @@ def analyze_image():
     }
     media_type = media_type_map.get(ext, "image/jpeg")
 
-    prompt = f"""คุณคือ Jarvis AI ผู้ช่วยส่วนตัว วิเคราะห์รูปภาพนี้แล้วตอบตามคำสั่ง
+    want_excel = any(w in command for w in ["excel", "Excel", "xlsx", "สเปรดชีต", "ตาราง"])
+    want_word = any(w in command for w in ["word", "Word", "doc", "เอกสาร"])
+    want_file = want_excel or want_word or any(w in command for w in ["สรุปเป็น", "ออกเป็น", "ไฟล์", "รายงาน"])
+
+    docx_file = None
+    ai_data = {}
+
+    try:
+        if want_file:
+            prompt = f"""คุณคือ Jarvis AI ผู้ช่วยส่วนตัว วิเคราะห์รูปภาพนี้ตามคำสั่งที่ได้รับ
+
+คำสั่ง: {command}
+
+ถ้าเป็นใบเสร็จ ใบกำกับภาษี หรือเอกสารการเงิน ให้แกะรายการสินค้า/บริการพร้อมราคาออกมาเป็นตาราง
+ถ้าเป็นเอกสารทั่วไป ให้สรุปเนื้อหาสำคัญ
+
+คำนวณและตรวจทานในใจให้เสร็จก่อน แล้วตอบกลับมาเป็น JSON object เพียงอย่างเดียวเท่านั้น ห้ามมีข้อความอธิบายหรือขั้นตอนคิดปนอยู่ก่อนหรือหลัง JSON เด็ดขาด (ฟิลด์ "summary" ต้องเป็นภาษาไทยเสมอ เขียนแบบประโยคธรรมชาติ ไม่ใช้สัญลักษณ์):
+{{
+  "title": "<ชื่อเรื่อง/หัวข้อรายงานสั้นๆ>",
+  "table": [["<รายการ>", "<ราคา/ค่า>"], ["<รายการ>", "<ราคา/ค่า>"]],
+  "summary": "<สรุปผลวิเคราะห์ 3-5 ประโยค>"
+}}
+ถ้าไม่มีรายการตารางที่ชัดเจน ให้ table เป็น [] (array ว่าง) แต่ยังต้องมี title และ summary เสมอ"""
+        else:
+            prompt = f"""คุณคือ Jarvis AI ผู้ช่วยส่วนตัว วิเคราะห์รูปภาพนี้แล้วตอบตามคำสั่ง
 
 คำสั่ง: {command}
 
@@ -665,10 +761,9 @@ def analyze_image():
 ถ้าเป็นรูปทั่วไป ให้อธิบายสิ่งที่เห็น
 ตอบภาษาไทย ประโยคธรรมชาติ ไม่ใช้สัญลักษณ์"""
 
-    try:
         message = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=1024,
+            max_tokens=2048,
             messages=[{
                 "role": "user",
                 "content": [
@@ -684,14 +779,33 @@ def analyze_image():
                 ]
             }]
         )
-        answer = clean_for_speech(message.content[0].text)
+        raw = message.content[0].text
+
+        if want_file:
+            try:
+                ai_data = extract_json(raw)
+                title = ai_data.get("title", "รายงานจากรูปภาพ")
+                table_rows = [tuple(row) for row in ai_data.get("table", []) if len(row) == 2]
+                summary = ai_data.get("summary", "")
+                answer = clean_for_speech(summary)
+                if want_excel:
+                    docx_file = create_generic_excel_report(title, table_rows, summary, out_prefix="รูปภาพ")
+                else:
+                    docx_file = create_generic_word_report(title, table_rows, summary, out_prefix="รูปภาพ")
+            except Exception as e:
+                print(f"JSON parse error (image): {e}")
+                answer = "ขออภัยครับ Jarvis ประมวลผลรูปภาพไม่สำเร็จ ลองส่งคำสั่งใหม่อีกครั้งครับ"
+                docx_file = None
+        else:
+            answer = clean_for_speech(raw)
+
     except Exception as e:
         print(f"Anthropic API error: {e}")
         return jsonify({"error": f"เรียก AI ไม่สำเร็จ: {e}"}), 500
 
     write_state(answer, file.filename)
 
-    return jsonify({"result": answer, "filename": file.filename})
+    return jsonify({"result": answer, "filename": file.filename, "docx_file": docx_file, "meta": ai_data})
 
 
 @app.route("/download")
