@@ -36,7 +36,18 @@ body{background:var(--dark);color:#a0e8f0;font-family:'Share Tech Mono',monospac
 #sphere-wrap{display:flex;flex-direction:column;align-items:center;padding:1rem 0 0.5rem}
 #c{display:block}
 #status{font-size:11px;letter-spacing:4px;color:var(--cyan);margin-top:8px;transition:color 0.3s;text-transform:uppercase}
-#response-wrap{flex:1;margin:0.5rem 1rem;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:1rem;overflow-y:auto;font-size:13px;line-height:1.8;color:#c0ecf4}
+#response-wrap{flex:1;margin:0.5rem 1rem;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:1rem;overflow-y:auto;font-size:13px;line-height:1.8;color:#c0ecf4;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:82%;padding:0.5rem 0.75rem;border-radius:4px;font-size:13px;line-height:1.6;white-space:pre-wrap}
+.msg-user{align-self:flex-end;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.25);color:#e6f7fb}
+.msg-jarvis{align-self:flex-start;background:rgba(0,255,136,0.06);border:1px solid rgba(0,255,136,0.2);color:#c9ffe8}
+.msg-jarvis.searching{color:rgba(0,255,136,0.5);font-style:italic}
+#knowledge-wrap{margin-top:0.75rem}
+#knowledge-zone{border:1px dashed rgba(0,255,136,0.3);border-radius:4px;padding:0.4rem;text-align:center;cursor:pointer;font-size:10px;letter-spacing:1px;color:rgba(0,255,136,0.5);transition:all 0.2s}
+#knowledge-zone:hover{border-color:var(--green);color:var(--green);background:rgba(0,255,136,0.04)}
+#knowledge-list{margin-top:6px;display:flex;flex-direction:column;gap:4px;max-height:110px;overflow-y:auto}
+.k-item{display:flex;align-items:center;justify-content:space-between;font-size:10px;color:rgba(0,212,255,0.6);background:rgba(0,212,255,0.03);border:1px solid rgba(0,212,255,0.1);border-radius:3px;padding:3px 6px}
+.k-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.k-item button{background:none;border:none;color:#ff6b6b;cursor:pointer;font-size:12px;padding:0 0 0 6px}
 #drop-zone{margin:0 1rem 0.3rem;border:1px dashed rgba(0,212,255,0.25);border-radius:4px;padding:0.5rem;text-align:center;cursor:pointer;font-size:11px;letter-spacing:2px;color:rgba(0,212,255,0.35);transition:all 0.2s}
 #drop-zone:hover,#drop-zone.drag-over{border-color:var(--cyan);color:var(--cyan);background:rgba(0,212,255,0.04)}
 #img-zone{margin:0 1rem 0.3rem;border:1px dashed rgba(0,255,136,0.25);border-radius:4px;padding:0.5rem;text-align:center;cursor:pointer;font-size:11px;letter-spacing:2px;color:rgba(0,255,136,0.35);transition:all 0.2s}
@@ -96,10 +107,18 @@ body{background:var(--dark);color:#a0e8f0;font-family:'Share Tech Mono',monospac
         <div class="stat-card"><div class="val" id="s-margin">—</div><div class="lbl">MARGIN</div></div>
       </div>
     </div>
+    <div id="knowledge-wrap">
+      <div class="sec-label">🧠 KNOWLEDGE BASE</div>
+      <div id="knowledge-zone" onclick="document.getElementById('knowledge-input').click()">
+        + ADD KNOWLEDGE (txt/csv/pdf/docx)
+      </div>
+      <input type="file" id="knowledge-input" accept=".txt,.csv,.pdf,.docx" style="display:none">
+      <div id="knowledge-list"></div>
+    </div>
   </div>
 
   <div class="panel-center">
-    <div id="response-wrap">พร้อมรับคำสั่ง — DROP FILE หรือ UPLOAD IMAGE ด้านล่าง</div>
+    <div id="response-wrap"></div>
     <div id="drop-zone" onclick="document.getElementById('file-input').click()">
       ▲ DROP FILE — PDF / WORD / EXCEL / CSV
     </div>
@@ -237,6 +256,108 @@ function updateTable(data){
 }
 
 let currentFile=null,currentImage=null,lastDownloadFile=null;
+let chatHistory=[];
+try{ chatHistory=JSON.parse(localStorage.getItem('jarvis_chat_history')||'[]'); }catch(e){ chatHistory=[]; }
+
+function addBubble(text,who){
+  const wrap=document.getElementById('response-wrap');
+  const b=document.createElement('div');
+  b.className='msg msg-'+who;
+  b.textContent=text;
+  wrap.appendChild(b);
+  wrap.scrollTop=wrap.scrollHeight;
+  return b;
+}
+
+function renderChatHistory(){
+  const wrap=document.getElementById('response-wrap');
+  wrap.innerHTML='';
+  if(!chatHistory.length){
+    addBubble('พร้อมรับคำสั่ง — พิมพ์คุยได้เลย หรือ DROP FILE / UPLOAD IMAGE ด้านล่าง','jarvis');
+    return;
+  }
+  chatHistory.forEach(m=>addBubble(m.content, m.role==='user'?'user':'jarvis'));
+}
+
+function saveChatHistory(){
+  try{ localStorage.setItem('jarvis_chat_history', JSON.stringify(chatHistory.slice(-40))); }catch(e){}
+}
+
+async function chatSend(message){
+  if(!message){return;}
+  addBubble(message,'user');
+  chatHistory.push({role:'user',content:message});
+  saveChatHistory();
+  speaking=true;
+  setStatus('THINKING','#ffaa00');
+  const thinkingBubble=addBubble('Jarvis กำลังคิด...','jarvis');
+  thinkingBubble.classList.add('searching');
+  try{
+    const r=await fetch('/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message, history: chatHistory.slice(0,-1)})
+    });
+    const d=await r.json();
+    thinkingBubble.remove();
+    if(d.reply){
+      addBubble(d.reply,'jarvis');
+      chatHistory.push({role:'assistant',content:d.reply});
+      saveChatHistory();
+      setStatus(d.searched?'SEARCHED WEB':'COMPLETE','var(--green)');
+      setTimeout(()=>{speaking=false;setStatus('STANDBY');},2500);
+    }else{
+      addBubble('Error: '+(d.error||'ไม่ทราบสาเหตุ'),'jarvis');
+      speaking=false;setStatus('ERROR','#ff4444');
+    }
+  }catch(e){
+    thinkingBubble.remove();
+    addBubble('เชื่อมต่อ server ไม่ได้','jarvis');
+    speaking=false;setStatus('ERROR','#ff4444');
+  }
+}
+
+async function loadKnowledgeList(){
+  try{
+    const r=await fetch('/knowledge');
+    const d=await r.json();
+    const list=document.getElementById('knowledge-list');
+    if(!d.files||!d.files.length){ list.innerHTML=''; return; }
+    list.innerHTML=d.files.map(f=>`
+      <div class="k-item"><span>📄 ${f.name}</span><button onclick="deleteKnowledge('${f.name.replace(/'/g,"\\'")}')">✕</button></div>
+    `).join('');
+  }catch(e){}
+}
+
+async function uploadKnowledge(file){
+  const form=new FormData();
+  form.append('file',file);
+  try{
+    const r=await fetch('/knowledge/upload',{method:'POST',body:form});
+    const d=await r.json();
+    if(d.error){ alert(d.error); return; }
+    loadKnowledgeList();
+  }catch(e){ alert('อัปโหลดความรู้ไม่สำเร็จ'); }
+}
+
+async function deleteKnowledge(name){
+  try{
+    await fetch('/knowledge/delete',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name})
+    });
+    loadKnowledgeList();
+  }catch(e){}
+}
+
+document.getElementById('knowledge-input').addEventListener('change',e=>{
+  if(e.target.files[0])uploadKnowledge(e.target.files[0]);
+  e.target.value='';
+});
+
+renderChatHistory();
+loadKnowledgeList();
 
 function setStatus(text,color='var(--cyan)'){
   document.getElementById('status').textContent=text;
@@ -250,7 +371,7 @@ async function uploadFile(file){
   currentImage=null;
   document.getElementById('file-badge').textContent='✓ '+file.name;
   document.getElementById('bottom-file').textContent=file.name;
-  document.getElementById('response-wrap').textContent='โหลดไฟล์แล้ว: '+file.name+' — พิมคำสั่งแล้วกด SEND';
+  addBubble('โหลดไฟล์แล้ว: '+file.name+' — พิมพ์คำสั่งแล้วกด SEND','jarvis');
   setStatus('FILE READY','var(--green)');
   setTimeout(()=>setStatus('STANDBY'),2000);
 }
@@ -261,14 +382,23 @@ async function sendCommand(){
   const dlArea=document.getElementById('download-area');
 
   if(currentImage){
+    document.getElementById('cmd-input').value='';
     await analyzeImage(cmd);
     return;
   }
 
-  if(!currentFile){resp.textContent='กรุณาอัปโหลดไฟล์หรือรูปภาพก่อนครับ';return;}
+  if(!currentFile){
+    if(!cmd)return;
+    document.getElementById('cmd-input').value='';
+    await chatSend(cmd);
+    return;
+  }
+  document.getElementById('cmd-input').value='';
   speaking=true;
   setStatus('PROCESSING','#ffaa00');
-  resp.textContent='Jarvis กำลังประมวลผล...';
+  if(cmd)addBubble(cmd,'user');
+  const thinkingBubble=addBubble('Jarvis กำลังประมวลผล...','jarvis');
+  thinkingBubble.classList.add('searching');
   dlArea.style.display='none';
   const form=new FormData();
   form.append('file',currentFile);
@@ -276,8 +406,9 @@ async function sendCommand(){
   try{
     const r=await fetch('/upload',{method:'POST',body:form});
     const d=await r.json();
+    thinkingBubble.remove();
     if(d.result){
-      resp.textContent=d.result;
+      addBubble(d.result,'jarvis');
       setStatus('COMPLETE','var(--green)');
       if(d.docx_file){lastDownloadFile=d.docx_file;dlArea.style.display='block';}
       try{
@@ -286,11 +417,12 @@ async function sendCommand(){
       }catch(e){}
       setTimeout(()=>{speaking=false;setStatus('STANDBY');},4000);
     }else{
-      resp.textContent='Error: '+(d.error||'ไม่ทราบสาเหตุ');
+      addBubble('Error: '+(d.error||'ไม่ทราบสาเหตุ'),'jarvis');
       speaking=false;setStatus('ERROR','#ff4444');
     }
   }catch(e){
-    resp.textContent='เชื่อมต่อ server ไม่ได้';
+    thinkingBubble.remove();
+    addBubble('เชื่อมต่อ server ไม่ได้','jarvis');
     speaking=false;setStatus('ERROR','#ff4444');
   }
 }
@@ -300,17 +432,18 @@ async function attachImage(file){
   currentFile=null;
   document.getElementById('file-badge').textContent='📷 '+file.name;
   document.getElementById('bottom-file').textContent=file.name;
-  document.getElementById('response-wrap').textContent='แนบรูปแล้ว: '+file.name+' — พิมพ์คำสั่งแล้วกด SEND (เช่น "แปลงเป็น excel" หรือ "สรุปเป็น word")';
+  addBubble('แนบรูปแล้ว: '+file.name+' — พิมพ์คำสั่งแล้วกด SEND (เช่น "แปลงเป็น excel" หรือ "สรุปเป็น word")','jarvis');
   setStatus('IMAGE READY','var(--green)');
   setTimeout(()=>setStatus('STANDBY'),2000);
 }
 
 async function analyzeImage(cmd){
-  const resp=document.getElementById('response-wrap');
   const dlArea=document.getElementById('download-area');
   speaking=true;
   setStatus('SCANNING IMAGE','var(--green)');
-  resp.textContent='Jarvis กำลังวิเคราะห์รูปภาพ...';
+  if(cmd)addBubble(cmd,'user');
+  const thinkingBubble=addBubble('Jarvis กำลังวิเคราะห์รูปภาพ...','jarvis');
+  thinkingBubble.classList.add('searching');
   dlArea.style.display='none';
   const form=new FormData();
   form.append('image',currentImage);
@@ -318,13 +451,14 @@ async function analyzeImage(cmd){
   try{
     const r=await fetch('/analyze-image',{method:'POST',body:form});
     const d=await r.json();
+    thinkingBubble.remove();
     if(d.result){
-      resp.textContent=d.result;
+      addBubble(d.result,'jarvis');
       setStatus('COMPLETE','var(--green)');
       if(d.docx_file){lastDownloadFile=d.docx_file;dlArea.style.display='block';}
       try{
         const meta=d.meta||{};
-        if(meta.table&&meta.table.length){updateTable({});
+        if(meta.table&&meta.table.length){
           document.getElementById('table-body').innerHTML=meta.table.map(row=>`
             <tr><td>${row[0]}</td><td style="text-align:right;color:var(--cyan)">${row[1]}</td></tr>
           `).join('');
@@ -332,11 +466,12 @@ async function analyzeImage(cmd){
       }catch(e){}
       setTimeout(()=>{speaking=false;setStatus('STANDBY');},4000);
     }else{
-      resp.textContent='Error: '+(d.error||'ไม่ทราบสาเหตุ');
+      addBubble('Error: '+(d.error||'ไม่ทราบสาเหตุ'),'jarvis');
       speaking=false;setStatus('ERROR','#ff4444');
     }
   }catch(e){
-    resp.textContent='เชื่อมต่อ server ไม่ได้';
+    thinkingBubble.remove();
+    addBubble('เชื่อมต่อ server ไม่ได้','jarvis');
     speaking=false;setStatus('ERROR','#ff4444');
   }
 }
@@ -363,22 +498,6 @@ const imgZone=document.getElementById('img-zone');
 imgZone.addEventListener('dragover',e=>{e.preventDefault();imgZone.style.borderColor='var(--green)';});
 imgZone.addEventListener('dragleave',()=>imgZone.style.borderColor='');
 imgZone.addEventListener('drop',e=>{e.preventDefault();imgZone.style.borderColor='';const f=e.dataTransfer.files[0];if(f)attachImage(f);});
-
-let lastText='';
-async function poll(){
-  try{
-    const r=await fetch('/jarvis_state.json?t='+Date.now());
-    const d=await r.json();
-    if(d.text&&d.text!==lastText&&!d.file){
-      lastText=d.text;
-      document.getElementById('response-wrap').textContent=d.text;
-      speaking=true;setStatus('SPEAKING','var(--green)');
-      setTimeout(()=>{speaking=false;setStatus('STANDBY');},d.text.length*80+2000);
-    }
-  }catch(e){}
-  setTimeout(poll,800);
-}
-poll();
 
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{

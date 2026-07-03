@@ -53,7 +53,7 @@ def extract_json(raw):
 def load_knowledge():
     knowledge = ""
     try:
-        for fname in os.listdir(KNOWLEDGE_DIR):
+        for fname in sorted(os.listdir(KNOWLEDGE_DIR)):
             fpath = os.path.join(KNOWLEDGE_DIR, fname)
             if fname.endswith(".txt") or fname.endswith(".csv"):
                 with open(fpath, encoding="utf-8-sig") as f:
@@ -62,9 +62,24 @@ def load_knowledge():
                 doc = fitz.open(fpath)
                 text = "\n".join([page.get_text() for page in doc])
                 knowledge += f"\n\n=== {fname} ===\n" + text
+            elif fname.endswith(".docx"):
+                knowledge += f"\n\n=== {fname} ===\n" + read_docx(fpath)
     except Exception as e:
         print(f"Knowledge load error: {e}")
-    return knowledge[:8000]
+    return knowledge[:12000]
+
+
+def list_knowledge_files():
+    try:
+        files = []
+        for fname in sorted(os.listdir(KNOWLEDGE_DIR)):
+            fpath = os.path.join(KNOWLEDGE_DIR, fname)
+            if os.path.isfile(fpath):
+                files.append({"name": fname, "size": os.path.getsize(fpath)})
+        return files
+    except Exception as e:
+        print(f"Knowledge list error: {e}")
+        return []
 
 
 def calculate_from_csv(content):
@@ -508,6 +523,95 @@ def health():
     return jsonify({"status": "ok"})
 
 
+# --- Knowledge base: อัปโหลดเอกสารอ้างอิงถาวรให้ Jarvis ใช้ตอบทุกครั้ง ---
+@app.route("/knowledge", methods=["GET"])
+def knowledge_list():
+    return jsonify({"files": list_knowledge_files()})
+
+
+@app.route("/knowledge/upload", methods=["POST"])
+def knowledge_upload():
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "no file"}), 400
+    ext = file.filename.lower().split(".")[-1]
+    if ext not in ("txt", "csv", "pdf", "docx"):
+        return jsonify({"error": "รองรับเฉพาะ .txt .csv .pdf .docx"}), 400
+    path = os.path.join(KNOWLEDGE_DIR, file.filename)
+    file.save(path)
+    return jsonify({"result": "บันทึกความรู้เรียบร้อยครับ", "files": list_knowledge_files()})
+
+
+@app.route("/knowledge/delete", methods=["POST"])
+def knowledge_delete():
+    data = request.get_json(silent=True) or {}
+    fname = data.get("name", "")
+    path = os.path.join(KNOWLEDGE_DIR, fname)
+    if os.path.exists(path) and os.path.dirname(os.path.abspath(path)) == os.path.abspath(KNOWLEDGE_DIR):
+        os.remove(path)
+        return jsonify({"result": "ลบแล้วครับ", "files": list_knowledge_files()})
+    return jsonify({"error": "ไม่พบไฟล์"}), 404
+
+
+# --- แชทธรรมดา: คุยได้เลยไม่ต้องอัปโหลดไฟล์ รองรับค้นเว็บสดและจำบทสนทนา ---
+JARVIS_SYSTEM_PROMPT = (
+    "คุณคือ Jarvis AI ผู้ช่วยส่วนตัว ถ้าถามเรื่องง่ายตอบสั้น 1-2 ประโยค "
+    "ถ้าถามซับซ้อนค่อยอธิบายยาว ห้ามใช้ bullet point ห้ามใช้ * "
+    "ตอบเป็นประโยคธรรมชาติเหมือนเพื่อนคุยกัน "
+    "ถ้าถามภาษาไทยตอบไทย ถ้าถามอังกฤษตอบอังกฤษ"
+)
+
+SEARCH_KEYWORDS = ["ราคา", "หุ้น", "ข่าว", "วันนี้", "ล่าสุด", "ตอนนี้", "2025", "2026",
+                    "price", "news", "today", "latest", "current"]
+
+
+@app.route("/chat", methods=["POST"])
+def chat():
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()
+    history = data.get("history") or []
+    if not message:
+        return jsonify({"error": "ไม่มีข้อความ"}), 400
+
+    knowledge = load_knowledge()
+    system_prompt = JARVIS_SYSTEM_PROMPT
+    if knowledge:
+        system_prompt += f"\n\nความรู้อ้างอิงที่มีให้ (ใช้ประกอบคำตอบถ้าเกี่ยวข้อง):\n{knowledge}"
+
+    need_search = any(w in message.lower() for w in SEARCH_KEYWORDS)
+
+    messages = []
+    for turn in history[-10:]:
+        role = turn.get("role")
+        content = turn.get("content", "")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": message})
+
+    params = {
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 1536,
+        "system": system_prompt,
+        "messages": messages,
+    }
+    if need_search:
+        params["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
+
+    try:
+        result = client.messages.create(**params)
+        answer = ""
+        for block in result.content:
+            if hasattr(block, "text"):
+                answer += block.text
+        answer = clean_for_speech(answer)
+    except Exception as e:
+        print(f"Anthropic API error (chat): {e}")
+        return jsonify({"error": f"เรียก AI ไม่สำเร็จ: {e}"}), 500
+
+    write_state(answer, "")
+    return jsonify({"reply": answer, "searched": need_search})
+
+
 @app.route("/upload", methods=["POST"])
 def upload():
     file = request.files.get("file")
@@ -687,6 +791,8 @@ def upload():
 
         else:
             prompt = f"""คุณคือ Jarvis AI
+{knowledge}
+
 คำสั่ง: {command}
 ข้อมูล {ext.upper()}:
 {content[:6000]}
